@@ -10,6 +10,7 @@
 #define GOSSIP_DEFAULT_PORT 25688
 #define GOSSIP_DEFAULT_NUM 10
 
+#define GOSSIP_STALL 10
 #define GOSSIP_PHASE_SYNC 0
 #define GOSSIP_PHASE_ACK1 1
 #define GOSSIP_PHASE_ACK2 2
@@ -63,9 +64,10 @@ struct gossip {
 	char **seeds;
 
 	int nr_gnodes;
-	char **gnode_pubids;
 	struct hlist_head *gnode_heads;
 	struct list_head gnodes;
+	int nr_full_gnodes;
+	char **full_gnode_pubids;
 
 	struct gossip_node *self;
 };

@@ -35,6 +35,10 @@ struct gossip_node *make_gossip_node(const char *pubkey)
 	if (!gnode) return NULL;
 	memset(gnode, 0, sizeof(*gnode));
 
+	gnode->full_node = 0;
+	gnode->public_ipaddr = "";
+	gnode->public_port = 0;
+
 	gnode->pubkey = strdup(pubkey);
 	gnode->pubid = do_sha1(pubkey, strlen(pubkey) + 1);
 	gnode->version = 0;
@@ -110,6 +114,17 @@ struct gossip_node *gossip_node_from_json(json_object *root)
 	return gnode;
 }
 
+int gossip_node_update_from_json(struct gossip_node *gnode, json_object *root)
+{
+	if (deserialize(gnode, gossip_node_meta, root))
+		return -1;
+
+	json_object *data = json_object_object_get(root, "data");
+	json_object_deep_copy(data, &gnode->data, NULL);
+
+	return 0;
+}
+
 /*
  * gossip
  */
@@ -128,10 +143,10 @@ find_gossip_node(struct gossip *gsp, const char *pubid)
 
 static void gossip_add_pubid(struct gossip *gsp, const char *pubid)
 {
-	gsp->nr_gnodes++;
-	gsp->gnode_pubids =
-		realloc(gsp->gnode_pubids, gsp->nr_gnodes * sizeof(void *));
-	gsp->gnode_pubids[gsp->nr_gnodes - 1] = strdup(pubid);
+	gsp->nr_full_gnodes++;
+	gsp->full_gnode_pubids = realloc(gsp->full_gnode_pubids,
+	                                 gsp->nr_full_gnodes * sizeof(void *));
+	gsp->full_gnode_pubids[gsp->nr_full_gnodes - 1] = strdup(pubid);
 }
 
 static bool gossip_node_is_seed(struct gossip_node *gnode, char **seed, int nr)
@@ -157,7 +172,7 @@ static json_object *make_packet(struct gossip *gsp, int phase)
 
 	struct gossip_node *pos;
 	list_for_each_entry(pos, &gsp->gnodes, node) {
-		if (time(NULL) - pos->alive_time < 10)
+		if (time(NULL) - pos->alive_time < GOSSIP_STALL)
 			json_object_array_add(gnodes, gossip_node_to_json(pos));
 	}
 
@@ -171,9 +186,9 @@ static int read_cb(struct gsp_udp *udp, const void *buf, ssize_t len,
 	JSON_PARSE(resp, buf, len);
 
 	json_object *gnodes = JSON_GET_OBJECT(resp, "gnodes");
-	size_t nr_gnodes = json_object_array_length(gnodes);
+	size_t nr = json_object_array_length(gnodes);
 
-	for (size_t i = 0; i < nr_gnodes; i++) {
+	for (size_t i = 0; i < nr; i++) {
 		json_object *item = json_object_array_get_idx(gnodes, i);
 		const char *pubid = JSON_GET_STRING(item, "pubid");
 		int64_t alive_time = JSON_GET_INT64(item, "alive_time");
@@ -186,19 +201,22 @@ static int read_cb(struct gsp_udp *udp, const void *buf, ssize_t len,
 		if (gnode && gnode->alive_time >= alive_time)
 			continue;
 
+		// update old one
 		if (gnode) {
-			hlist_del(&gnode->hash_node);
-			list_del(&gnode->node);
-			free_gossip_node(gnode);
-		} else {
-			gossip_add_pubid(gsp, pubid);
+			gossip_node_update_from_json(gnode, item);
+			continue;
 		}
 
+		// add a new gnode
 		gnode = gossip_node_from_json(item);
 		unsigned int tag = calc_tag(gnode->pubid, strlen(gnode->pubid));
 		struct hlist_head *head = &gsp->gnode_heads[tag_hash_fn(tag)];
 		hlist_add_head(&gnode->hash_node, head);
 		list_add(&gnode->node, &gsp->gnodes);
+		gsp->nr_gnodes++;
+
+		if (gnode->full_node)
+			gossip_add_pubid(gsp, pubid);
 	}
 
 	if (JSON_GET_INT(resp, "phase") == GOSSIP_PHASE_SYNC) {
@@ -223,12 +241,11 @@ static int read_cb(struct gsp_udp *udp, const void *buf, ssize_t len,
 
 static int do_sync_node(struct gossip *gsp, struct gossip_node **gnode_out)
 {
-	if (gsp->nr_gnodes == 1)
+	if (gsp->nr_full_gnodes == 0)
 		return -1;
 
-	// skip first gnode which is ourself
-	int ran = random() % (gsp->nr_gnodes - 1) + 1;
-	const char *pubid = gsp->gnode_pubids[ran];
+	int ran = random() % gsp->nr_full_gnodes;
+	const char *pubid = gsp->full_gnode_pubids[ran];
 	unsigned int tag = calc_tag(pubid, strlen(pubid));
 
 	struct hlist_head *head = &gsp->gnode_heads[tag_hash_fn(tag)];
@@ -237,9 +254,10 @@ static int do_sync_node(struct gossip *gsp, struct gossip_node **gnode_out)
 		if (strcmp(pos->pubid, pubid) == 0)
 			break;
 	}
-	assert(pos);
+	assert(pos && pos->full_node);
 
-	if (!pos->full_node)
+	// FIXME: find alive node directly rather than judge here
+	if (time(NULL) - pos->alive_time > 600)
 		return -1;
 
 	struct sockaddr_in addr = {0};
@@ -282,6 +300,7 @@ static void do_sync_seed(struct gossip *gsp)
 
 int gossip_init(struct gossip *gsp, struct gossip_node *gnode, int port)
 {
+	// udp
 	struct gsp_udp_info info = {
 		.ipaddr = "0.0.0.0",
 		.port = GOSSIP_DEFAULT_PORT,
@@ -294,22 +313,25 @@ int gossip_init(struct gossip *gsp, struct gossip_node *gnode, int port)
 		return -1;
 	gsp->udp->user_data = gsp;
 
+	// seed
 	gsp->nr_seeds = 0;
 	gsp->seeds = NULL;
-	gsp->self = gnode;
 
+	// gnode
 	gsp->nr_gnodes = 0;
-	gsp->gnode_pubids = NULL;
-	gossip_add_pubid(gsp, gnode->pubid);
 	gsp->gnode_heads = (struct hlist_head *)calloc(
 		NR_HASH, sizeof(struct hlist_head));
 	INIT_LIST_HEAD(&gsp->gnodes);
+	gsp->nr_full_gnodes = 0;
+	gsp->full_gnode_pubids = NULL;
 
+	// self
+	gsp->self = gnode;
 	unsigned int tag = calc_tag(gnode->pubid, strlen(gnode->pubid));
 	struct hlist_head *head = &gsp->gnode_heads[tag_hash_fn(tag)];
 	hlist_add_head(&gnode->hash_node, head);
-
 	list_add(&gnode->node, &gsp->gnodes);
+	gsp->nr_gnodes++;
 
 	return 0;
 }
@@ -325,10 +347,10 @@ int gossip_close(struct gossip *gsp)
 		free(gsp->seeds);
 	}
 
-	if (gsp->gnode_pubids) {
-		for (int i = 0; i < gsp->nr_gnodes; i++)
-			free(gsp->gnode_pubids[i]);
-		free(gsp->gnode_pubids);
+	if (gsp->full_gnode_pubids) {
+		for (int i = 0; i < gsp->nr_full_gnodes; i++)
+			free(gsp->full_gnode_pubids[i]);
+		free(gsp->full_gnode_pubids);
 	}
 
 	struct gossip_node *pos, *n;
@@ -358,7 +380,7 @@ int gossip_run(struct gossip *gsp)
 	while (1) {
 		gsp_udp_loop(gsp->udp, GSP_UDP_LOOP_ONCE);
 
-		if (time(NULL) - tt < 10)
+		if (time(NULL) - tt < (GOSSIP_STALL >> 1))
 			continue;
 
 		gsp->self->alive_time = time(NULL);
