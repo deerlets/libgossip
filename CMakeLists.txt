@@ -13,7 +13,7 @@ if (DEBUG)
 	add_definitions(-DDEBUG)
 endif ()
 
-include_directories(src src/lib)
+include_directories(src)
 include_directories(include)
 cmake_policy(SET CMP0015 NEW)
 link_directories(lib)
