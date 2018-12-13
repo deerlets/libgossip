@@ -34,6 +34,7 @@ struct gossip_node {
 
 	struct hlist_node hash_node;
 	struct list_head node;
+	struct list_head active_node;
 };
 
 static const struct ser_meta gossip_node_meta[] = {
@@ -63,11 +64,11 @@ struct gossip {
 	int nr_seeds;
 	char **seeds;
 
-	int nr_gnodes;
 	struct hlist_head *gnode_heads;
+	int nr_gnodes;
 	struct list_head gnodes;
-	int nr_full_gnodes;
-	char **full_gnode_pubids;
+	int nr_active_gnodes;
+	struct list_head active_gnodes;
 
 	struct gossip_node *self;
 };
