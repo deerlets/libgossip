@@ -12,7 +12,7 @@ extern "C" {
 #define GSP_UDP_LOOP_FOREVER 1
 
 #define GSP_UDP_RECV_BUF_LEN_MIN 1024
-#define GSP_UDP_RECV_BUF_LEN_DEFAULT 8192
+#define GSP_UDP_RECV_BUF_LEN_DEFAULT 8192 * 8
 
 struct gsp_udp;
 

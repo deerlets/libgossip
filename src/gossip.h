@@ -26,7 +26,7 @@ struct gossip_node {
 
 	char *pubkey;
 	char *pubid;
-	int version;
+	int64_t version;
 	int64_t alive_time;
 	int64_t update_time;
 
@@ -43,7 +43,7 @@ static const struct ser_meta gossip_node_meta[] = {
 	INIT_SER_META(struct gossip_node, public_port, SER_T_INT, NULL),
 	INIT_SER_META(struct gossip_node, pubkey, SER_T_STRING, NULL),
 	INIT_SER_META(struct gossip_node, pubid, SER_T_STRING, NULL),
-	INIT_SER_META(struct gossip_node, version, SER_T_INT, NULL),
+	INIT_SER_META(struct gossip_node, version, SER_T_INT64, NULL),
 	INIT_SER_META(struct gossip_node, alive_time, SER_T_INT64, NULL),
 	INIT_SER_META(struct gossip_node, update_time, SER_T_INT64, NULL),
 	INIT_SER_META_NONE(),

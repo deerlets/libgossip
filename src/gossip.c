@@ -36,7 +36,7 @@ struct gossip_node *make_gossip_node(const char *pubkey)
 	memset(gnode, 0, sizeof(*gnode));
 
 	gnode->full_node = 0;
-	gnode->public_ipaddr = "";
+	gnode->public_ipaddr = strdup("");
 	gnode->public_port = 0;
 
 	gnode->pubkey = strdup(pubkey);
@@ -55,11 +55,10 @@ struct gossip_node *make_gossip_node(const char *pubkey)
 
 void free_gossip_node(struct gossip_node *gnode)
 {
+	free(gnode->public_ipaddr);
+
 	free(gnode->pubkey);
 	free(gnode->pubid);
-
-	if (gnode->full_node)
-		free(gnode->public_ipaddr);
 
 	json_object_put(gnode->data);
 	free(gnode);
@@ -193,6 +192,8 @@ static int read_cb(struct gsp_udp *udp, const void *buf, ssize_t len,
 {
 	struct gossip *gsp = udp->user_data;
 	JSON_PARSE(resp, buf, len);
+	//assert(resp);
+	if (!resp) goto test_out;
 
 	json_object *gnodes = JSON_GET_OBJECT(resp, "gnodes");
 	size_t nr = json_object_array_length(gnodes);
@@ -249,6 +250,7 @@ static int read_cb(struct gsp_udp *udp, const void *buf, ssize_t len,
 	// ---------------------------------------------------
 
 	struct sockaddr_in *__addr = (struct sockaddr_in *)addr;
+ test_out:
 
 	printf("from: %s:%d, ", inet_ntoa(__addr->sin_addr),
 	       ntohs(__addr->sin_port));
