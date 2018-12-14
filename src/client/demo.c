@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
 
 	assert(gossip_init(&gsp, gnode, port) == 0);
 	if (argc == 3) gossip_add_seed(&gsp, argv[2]);
-	gossip_run(&gsp);
+	while (1) gossip_loop_once(&gsp);
 	gossip_close(&gsp);
 	free_gossip_node(gnode);
 

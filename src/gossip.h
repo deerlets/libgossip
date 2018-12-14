@@ -60,6 +60,7 @@ struct gossip_node *gossip_node_from_json(json_object *root);
 
 struct gossip {
 	struct gsp_udp *udp;
+	int64_t last_sync_time;
 
 	int nr_seeds;
 	char **seeds;
@@ -76,7 +77,7 @@ struct gossip {
 int gossip_init(struct gossip *gsp, struct gossip_node *gnode, int port);
 int gossip_close(struct gossip *gsp);
 void gossip_add_seed(struct gossip *gsp, const char *seed);
-int gossip_run(struct gossip *gsp);
+int gossip_loop_once(struct gossip *gsp);
 
 #ifdef __cplusplus
 }

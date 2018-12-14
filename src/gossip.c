@@ -323,6 +323,7 @@ int gossip_init(struct gossip *gsp, struct gossip_node *gnode, int port)
 	if (gsp_udp_init(gsp->udp, &info))
 		return -1;
 	gsp->udp->user_data = gsp;
+	gsp->last_sync_time = 0;
 
 	// seed
 	gsp->nr_seeds = 0;
@@ -377,27 +378,24 @@ void gossip_add_seed(struct gossip *gsp, const char *seed)
 	gsp->seeds[gsp->nr_seeds - 1] = strdup(seed);
 }
 
-int gossip_run(struct gossip *gsp)
+int gossip_loop_once(struct gossip *gsp)
 {
 	gsp_udp_read_start(gsp->udp, read_cb);
 
-	time_t tt = time(NULL);
-	while (1) {
-		gsp_udp_loop(gsp->udp, GSP_UDP_LOOP_ONCE);
+	gsp_udp_loop(gsp->udp, GSP_UDP_LOOP_ONCE);
 
-		if (time(NULL) - tt < (GOSSIP_STALL >> 1))
-			continue;
+	if (time(NULL) - gsp->last_sync_time < (GOSSIP_STALL >> 1))
+		return 0;
 
-		gsp->self->alive_time = time(NULL);
+	gsp->self->alive_time = time(NULL);
 
-		struct gossip_node *gnode = NULL;
-		if (!gsp->nr_active_gnodes ||
-		    do_sync_node(gsp, &gnode) != 0 ||
-		    !gossip_node_is_seed(gnode, gsp->seeds, gsp->nr_seeds))
-			do_sync_seed(gsp);
+	struct gossip_node *gnode = NULL;
+	if (!gsp->nr_active_gnodes ||
+		do_sync_node(gsp, &gnode) != 0 ||
+		!gossip_node_is_seed(gnode, gsp->seeds, gsp->nr_seeds))
+		do_sync_seed(gsp);
 
-		tt = time(NULL);
-	}
+	gsp->last_sync_time = time(NULL);
 
 	return 0;
 }
