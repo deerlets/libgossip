@@ -8,7 +8,7 @@
 #include "gsp_udp.h"
 
 #define GOSSIP_DEFAULT_PORT 25688
-#define GOSSIP_DEFAULT_NUM 10
+#define GOSSIP_DEFAULT_SYNC_COUNT 6
 
 #define GOSSIP_STALL 10
 #define GOSSIP_PHASE_SYNC 0

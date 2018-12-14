@@ -4,6 +4,14 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <signal.h>
+
+int exit_flag;
+
+static void signal_handler(int sig)
+{
+	exit_flag = 1;
+}
 
 int main(int argc, char *argv[])
 {
@@ -13,6 +21,8 @@ int main(int argc, char *argv[])
 	}
 
 	srand(time(NULL));
+	signal(SIGINT, signal_handler);
+	signal(SIGQUIT, signal_handler);
 
 	char pubkey[256];
 	snprintf(pubkey, 256, "gnode-%ld", random() % 100);
@@ -31,9 +41,8 @@ int main(int argc, char *argv[])
 
 	assert(gossip_init(&gsp, gnode, port) == 0);
 	if (argc == 3) gossip_add_seed(&gsp, argv[2]);
-	while (1) gossip_loop_once(&gsp);
+	while (!exit_flag) gossip_loop_once(&gsp);
 	gossip_close(&gsp);
-	free_gossip_node(gnode);
 
 	return 0;
 }

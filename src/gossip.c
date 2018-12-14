@@ -70,6 +70,7 @@ void gossip_node_set_full(struct gossip_node *gnode,
 	assert(!gnode->full_node);
 
 	gnode->full_node = 1;
+	free(gnode->public_ipaddr);
 	gnode->public_ipaddr = strdup(ipaddr);
 	gnode->public_port = port;
 }
@@ -80,7 +81,7 @@ void gossip_node_unset_full(struct gossip_node *gnode)
 
 	gnode->full_node = 0;
 	free(gnode->public_ipaddr);
-	gnode->public_ipaddr = NULL;
+	gnode->public_ipaddr = strdup("");
 	gnode->public_port = 0;
 }
 
@@ -129,6 +130,17 @@ int gossip_node_update_from_json(struct gossip_node *gnode, json_object *root)
  * gossip
  */
 
+static json_object *gossip_node_min_to_json(const struct gossip_node *gnode)
+{
+	json_object *root = json_object_new_object();
+
+	JSON_ADD_STRING(root, "pubid", gnode->pubid);
+	JSON_ADD_INT64(root, "version", gnode->version);
+	JSON_ADD_INT64(root, "alive_time", gnode->alive_time);
+
+	return root;
+}
+
 static struct gossip_node *
 find_gossip_node(struct gossip *gsp, const char *pubid)
 {
@@ -170,21 +182,201 @@ static bool gossip_node_is_seed(struct gossip_node *gnode, char **seed, int nr)
 	return false;
 }
 
-static json_object *make_packet(struct gossip *gsp, int phase)
+static json_object *
+make_packet_sync(struct gossip *gsp, struct gossip_node *target)
 {
 	json_object *root = json_object_new_object();
-	JSON_ADD_INT(root, "phase", phase);
+	JSON_ADD_INT(root, "phase", GOSSIP_PHASE_SYNC);
 
 	json_object *gnodes = json_object_new_array();
 	JSON_ADD_OBJECT(root, "gnodes", gnodes);
 
+	json_object_array_add(gnodes, gossip_node_min_to_json(gsp->self));
+	if (target)
+		json_object_array_add(gnodes, gossip_node_min_to_json(target));
+
+	int sync_count = 0;
+	int nr_left = target ? gsp->nr_gnodes - 2 : gsp->nr_gnodes - 1;
+
 	struct gossip_node *pos;
 	list_for_each_entry(pos, &gsp->gnodes, node) {
-		if (time(NULL) - pos->alive_time < GOSSIP_STALL)
-			json_object_array_add(gnodes, gossip_node_to_json(pos));
+		if (pos == gsp->self || pos == target)
+			continue;
+
+		if (random() % nr_left >=
+		    (GOSSIP_DEFAULT_SYNC_COUNT - sync_count))
+			continue;
+
+		sync_count++;
+		nr_left--;
+		json_object_array_add(gnodes, gossip_node_min_to_json(pos));
 	}
 
+	assert(nr_left == 0 || sync_count == GOSSIP_DEFAULT_SYNC_COUNT);
+
 	return root;
+}
+
+static json_object *handle_packet_sync(struct gossip *gsp, json_object *sync)
+{
+	json_object *ack1 = json_object_new_object();
+	JSON_ADD_INT(ack1, "phase", GOSSIP_PHASE_ACK1);
+	json_object *ack1_gnodes = json_object_new_array();
+	JSON_ADD_OBJECT(ack1, "gnodes", ack1_gnodes);
+
+	int has_self = 0;
+	json_object *sync_gnodes = JSON_GET_OBJECT(sync, "gnodes");
+	size_t nr = json_object_array_length(sync_gnodes);
+
+	for (size_t i = 0; i < nr; i++) {
+		json_object *item = json_object_array_get_idx(sync_gnodes, i);
+		const char *pubid = JSON_GET_STRING(item, "pubid");
+		int64_t version = JSON_GET_INT64(item, "version");
+		int64_t alive_time = JSON_GET_INT64(item, "alive_time");
+
+		if (strcmp(pubid, gsp->self->pubid) == 0)
+			has_self = 1;
+
+		if (alive_time > time(NULL))
+			continue;
+
+		struct gossip_node *gnode = find_gossip_node(gsp, pubid);
+		if (!gnode || version > gnode->version) {
+			// sync
+			json_object *tmp = json_object_new_object();
+			JSON_ADD_STRING(tmp, "pubid", pubid);
+			json_object_array_add(ack1_gnodes, tmp);
+		} else if (version == gnode->version) {
+			if (alive_time >= gnode->alive_time) {
+				gnode->alive_time = alive_time;
+			} else {
+				// ack alive_time
+				json_object *tmp = json_object_new_object();
+				JSON_ADD_STRING(tmp, "pubid", pubid);
+				JSON_ADD_INT64(tmp, "version", version);
+				JSON_ADD_INT64(tmp, "alive_time",
+				               gnode->alive_time);
+				json_object_array_add(ack1_gnodes, tmp);
+			}
+		} else if (version < gnode->version) {
+			json_object_array_add(
+				ack1_gnodes, gossip_node_to_json(gnode));
+		} else {
+			assert(false);
+		}
+	}
+
+	if (!has_self) {
+		json_object_array_add(
+			ack1_gnodes, gossip_node_to_json(gsp->self));
+	}
+
+	return ack1;
+}
+
+static json_object *handle_packet_ack1(struct gossip *gsp, json_object *ack1)
+{
+	json_object *ack2 = json_object_new_object();
+	JSON_ADD_INT(ack2, "phase", GOSSIP_PHASE_ACK2);
+	json_object *ack2_gnodes = json_object_new_array();
+	JSON_ADD_OBJECT(ack2, "gnodes", ack2_gnodes);
+
+	json_object *ack1_gnodes = JSON_GET_OBJECT(ack1, "gnodes");
+	size_t nr = json_object_array_length(ack1_gnodes);
+
+	for (size_t i = 0; i < nr; i++) {
+		json_object *item = json_object_array_get_idx(ack1_gnodes, i);
+		const char *pubid = JSON_GET_STRING(item, "pubid");
+		int64_t version = JSON_GET_INT64(item, "version");
+		int64_t alive_time = JSON_GET_INT64(item, "alive_time");
+
+		if (alive_time > time(NULL))
+			continue;
+
+		struct gossip_node *gnode = find_gossip_node(gsp, pubid);
+
+		if (!gnode) {
+			gnode = gossip_node_from_json(item);
+
+			unsigned int tag =
+				calc_tag(gnode->pubid, strlen(gnode->pubid));
+			struct hlist_head *head =
+				&gsp->gnode_heads[tag_hash_fn(tag)];
+			hlist_add_head(&gnode->hash_node, head);
+
+			list_add(&gnode->node, &gsp->gnodes);
+			gsp->nr_gnodes++;
+
+			if (gnode->full_node) {
+				list_add(&gnode->active_node,
+				         &gsp->active_gnodes);
+				gsp->nr_active_gnodes++;
+			}
+		} else if (version > gnode->version) {
+			gossip_node_update_from_json(gnode, item);
+
+			if (gnode->full_node &&
+			    list_empty(&gnode->active_node)) {
+				list_add(&gnode->active_node,
+				         &gsp->active_gnodes);
+				gsp->nr_active_gnodes++;
+			}
+		} else if (version == gnode->version) {
+			if (alive_time >= gnode->alive_time)
+				gnode->alive_time = alive_time;
+		} else {
+			json_object_array_add(
+				ack2_gnodes, gossip_node_to_json(gnode));
+		}
+	}
+
+	return ack2;
+}
+
+static void handle_packet_ack2(struct gossip *gsp, json_object *ack2)
+{
+	json_object *ack2_gnodes = JSON_GET_OBJECT(ack2, "gnodes");
+	size_t nr = json_object_array_length(ack2_gnodes);
+
+	for (size_t i = 0; i < nr; i++) {
+		json_object *item = json_object_array_get_idx(ack2_gnodes, i);
+		const char *pubid = JSON_GET_STRING(item, "pubid");
+		int64_t version = JSON_GET_INT64(item, "version");
+		int64_t alive_time = JSON_GET_INT64(item, "alive_time");
+
+		if (alive_time > time(NULL))
+			continue;
+
+		struct gossip_node *gnode = find_gossip_node(gsp, pubid);
+
+		if (!gnode) {
+			gnode = gossip_node_from_json(item);
+
+			unsigned int tag =
+				calc_tag(gnode->pubid, strlen(gnode->pubid));
+			struct hlist_head *head =
+				&gsp->gnode_heads[tag_hash_fn(tag)];
+			hlist_add_head(&gnode->hash_node, head);
+
+			list_add(&gnode->node, &gsp->gnodes);
+			gsp->nr_gnodes++;
+
+			if (gnode->full_node) {
+				list_add(&gnode->active_node,
+				         &gsp->active_gnodes);
+				gsp->nr_active_gnodes++;
+			}
+		} else if (version > gnode->version) {
+			gossip_node_update_from_json(gnode, item);
+
+			if (gnode->full_node &&
+			    list_empty(&gnode->active_node)) {
+				list_add(&gnode->active_node,
+				         &gsp->active_gnodes);
+				gsp->nr_active_gnodes++;
+			}
+		}
+	}
 }
 
 static int read_cb(struct gsp_udp *udp, const void *buf, ssize_t len,
@@ -195,54 +387,18 @@ static int read_cb(struct gsp_udp *udp, const void *buf, ssize_t len,
 	//assert(resp);
 	if (!resp) goto test_out;
 
-	json_object *gnodes = JSON_GET_OBJECT(resp, "gnodes");
-	size_t nr = json_object_array_length(gnodes);
-
-	for (size_t i = 0; i < nr; i++) {
-		json_object *item = json_object_array_get_idx(gnodes, i);
-		const char *pubid = JSON_GET_STRING(item, "pubid");
-		int64_t alive_time = JSON_GET_INT64(item, "alive_time");
-
-		struct gossip_node *gnode = find_gossip_node(gsp, pubid);
-
-		if (strcmp(pubid, gsp->self->pubid) == 0)
-			continue;
-
-		if (gnode && gnode->alive_time >= alive_time)
-			continue;
-
-		// update old one
-		if (gnode) {
-			gossip_node_update_from_json(gnode, item);
-			if (gnode->full_node && list_empty(&gnode->active_node)) {
-				list_add(&gnode->active_node,
-				         &gsp->active_gnodes);
-				gsp->nr_active_gnodes++;
-			}
-			continue;
-		}
-
-		// add a new gnode
-		gnode = gossip_node_from_json(item);
-
-		unsigned int tag = calc_tag(gnode->pubid, strlen(gnode->pubid));
-		struct hlist_head *head = &gsp->gnode_heads[tag_hash_fn(tag)];
-		hlist_add_head(&gnode->hash_node, head);
-
-		list_add(&gnode->node, &gsp->gnodes);
-		gsp->nr_gnodes++;
-
-		if (gnode->full_node) {
-			list_add(&gnode->active_node, &gsp->active_gnodes);
-			gsp->nr_active_gnodes++;
-		}
-	}
-
 	if (JSON_GET_INT(resp, "phase") == GOSSIP_PHASE_SYNC) {
-		json_object *root = make_packet(gsp, GOSSIP_PHASE_ACK1);
-		const char *result = JSON_DUMP(root);
+		json_object *ack1 = handle_packet_sync(gsp, resp);
+		const char *result = JSON_DUMP(ack1);
 		gsp_udp_write(gsp->udp, result, strlen(result), addr, addr_len);
-		json_object_put(root);
+		json_object_put(ack1);
+	} else if (JSON_GET_INT(resp, "phase") == GOSSIP_PHASE_ACK1) {
+		json_object *ack2 = handle_packet_ack1(gsp, resp);
+		const char *result = JSON_DUMP(ack2);
+		gsp_udp_write(gsp->udp, result, strlen(result), addr, addr_len);
+		json_object_put(ack2);
+	} else if (JSON_GET_INT(resp, "phase") == GOSSIP_PHASE_ACK2) {
+		handle_packet_ack2(gsp, resp);
 	}
 
 	json_object_put(resp);
@@ -278,7 +434,7 @@ static int do_sync_node(struct gossip *gsp, struct gossip_node **gnode_out)
 	addr.sin_port = htons(gnode->public_port);
 	addr.sin_addr.s_addr = inet_addr(gnode->public_ipaddr);
 
-	json_object *root = make_packet(gsp, GOSSIP_PHASE_SYNC);
+	json_object *root = make_packet_sync(gsp, gnode);
 	const char *result = JSON_DUMP(root);
 	gsp_udp_write(gsp->udp, result, strlen(result),
 	              (struct sockaddr *)&addr, sizeof(addr));
@@ -304,7 +460,7 @@ static void do_sync_seed(struct gossip *gsp)
 	addr.sin_port = htons(port);
 	addr.sin_addr.s_addr = inet_addr(ipaddr);
 
-	json_object *root = make_packet(gsp, GOSSIP_PHASE_SYNC);
+	json_object *root = make_packet_sync(gsp, NULL);
 	const char *result = JSON_DUMP(root);
 	gsp_udp_write(gsp->udp, result, strlen(result),
 	              (struct sockaddr *)&addr, sizeof(addr));
