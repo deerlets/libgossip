@@ -385,7 +385,7 @@ static int read_cb(struct gsp_udp *udp, const void *buf, ssize_t len,
 	struct gossip *gsp = udp->user_data;
 	JSON_PARSE(resp, buf, len);
 	//assert(resp);
-	if (!resp) goto test_out;
+	if (!resp) return -1;
 
 	if (JSON_GET_INT(resp, "phase") == GOSSIP_PHASE_SYNC) {
 		json_object *ack1 = handle_packet_sync(gsp, resp);
@@ -402,15 +402,6 @@ static int read_cb(struct gsp_udp *udp, const void *buf, ssize_t len,
 	}
 
 	json_object_put(resp);
-
-	// ---------------------------------------------------
-
-	struct sockaddr_in *__addr = (struct sockaddr_in *)addr;
- test_out:
-
-	printf("from: %s:%d, ", inet_ntoa(__addr->sin_addr),
-	       ntohs(__addr->sin_port));
-	printf("buf: %s\n\n", (char *)buf);
 
 	return 0;
 }
