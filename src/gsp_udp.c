@@ -27,8 +27,32 @@ int gsp_udp_init(struct gsp_udp *udp, struct gsp_udp_info *info)
 		return -1;
 	}
 
+	struct timeval tv = { .tv_sec = 0, .tv_usec = 100000 };
+	if (setsockopt(udp->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+		int err = errno;
+		close(udp->fd);
+		errno = err;
+		return -1;
+	}
+
+	int buf_size = GSP_UDP_RECV_BUF_LEN_MAX;
+	if (setsockopt(udp->fd, SOL_SOCKET, SO_SNDBUF,
+	               &buf_size, sizeof(buf_size)) < 0) {
+		int err = errno;
+		close(udp->fd);
+		errno = err;
+		return -1;
+	}
+	if (setsockopt(udp->fd, SOL_SOCKET, SO_RCVBUF,
+	               &buf_size, sizeof(buf_size)) < 0) {
+		int err = errno;
+		close(udp->fd);
+		errno = err;
+		return -1;
+	}
+
 	if (info->recv_buf_len < GSP_UDP_RECV_BUF_LEN_MIN)
-		udp->recv_buf_len = GSP_UDP_RECV_BUF_LEN_DEFAULT;
+		udp->recv_buf_len = GSP_UDP_RECV_BUF_LEN_MAX;
 	else
 		udp->recv_buf_len = info->recv_buf_len;
 
@@ -65,10 +89,6 @@ ssize_t gsp_udp_write(struct gsp_udp *udp, const void *buf, size_t len,
 
 int gsp_udp_loop(struct gsp_udp *udp, int flags)
 {
-	struct timeval tv = { .tv_sec = 0, .tv_usec = 100000 };
-	if (setsockopt(udp->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
-		return -1;
-
 	do {
 		if (udp->ops.read_cb) {
 			struct sockaddr raddr = {0};

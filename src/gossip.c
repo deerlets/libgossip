@@ -390,8 +390,14 @@ static int read_cb(struct gsp_udp *udp, const void *buf, ssize_t len,
 {
 	struct gossip *gsp = udp->user_data;
 	JSON_PARSE(resp, buf, len);
-	//assert(resp);
-	if (!resp) return -1;
+
+	if (!resp) {
+		char tmp[len + 1];
+		memcpy(tmp, buf, len);
+		tmp[len] = '\0';
+		fprintf(stderr, "buf => %s\n", tmp);
+		return -1;
+	}
 
 	if (JSON_GET_INT(resp, "phase") == GOSSIP_PHASE_SYNC) {
 		json_object *ack1 = handle_packet_sync(gsp, resp);
@@ -470,7 +476,7 @@ int gossip_init(struct gossip *gsp, struct gossip_node *gnode, int port)
 	struct gsp_udp_info info = {
 		.ipaddr = "0.0.0.0",
 		.port = GOSSIP_DEFAULT_PORT,
-		.recv_buf_len = GSP_UDP_RECV_BUF_LEN_DEFAULT,
+		.recv_buf_len = GSP_UDP_RECV_BUF_LEN_MAX,
 	};
 	if (port) info.port = port;
 
