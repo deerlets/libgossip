@@ -67,7 +67,8 @@ void free_gossip_node(struct gossip_node *gnode)
 void gossip_node_set_full(struct gossip_node *gnode,
                           const char *ipaddr, int port)
 {
-	assert(!gnode->full_node);
+	assert(!gnode->full_node || gnode->public_port != port ||
+	       strcmp(gnode->public_ipaddr, ipaddr));
 
 	gnode->full_node = 1;
 	free(gnode->public_ipaddr);
