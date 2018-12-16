@@ -240,8 +240,9 @@ static json_object *handle_packet_sync(struct gossip *gsp, json_object *sync)
 		if (strcmp(pubid, gsp->self->pubid) == 0)
 			has_self = 1;
 
-		if (alive_time > time(NULL))
-			continue;
+		// FIXME: time of each node is always different
+		//if (alive_time > time(NULL))
+		//	continue;
 
 		struct gossip_node *gnode = find_gossip_node(gsp, pubid);
 		if (!gnode || version > gnode->version) {
@@ -293,8 +294,9 @@ static json_object *handle_packet_ack1(struct gossip *gsp, json_object *ack1)
 		int64_t version = JSON_GET_INT64(item, "version");
 		int64_t alive_time = JSON_GET_INT64(item, "alive_time");
 
-		if (alive_time > time(NULL))
-			continue;
+		// FIXME: time of each node is always different
+		//if (alive_time > time(NULL))
+		//	continue;
 
 		struct gossip_node *gnode = find_gossip_node(gsp, pubid);
 
@@ -345,10 +347,11 @@ static void handle_packet_ack2(struct gossip *gsp, json_object *ack2)
 		json_object *item = json_object_array_get_idx(ack2_gnodes, i);
 		const char *pubid = JSON_GET_STRING(item, "pubid");
 		int64_t version = JSON_GET_INT64(item, "version");
-		int64_t alive_time = JSON_GET_INT64(item, "alive_time");
+		//int64_t alive_time = JSON_GET_INT64(item, "alive_time");
 
-		if (alive_time > time(NULL))
-			continue;
+		// FIXME: time of each node is always different
+		//if (alive_time > time(NULL))
+		//	continue;
 
 		struct gossip_node *gnode = find_gossip_node(gsp, pubid);
 
