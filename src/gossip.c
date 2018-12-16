@@ -122,6 +122,8 @@ int gossip_node_update_from_json(struct gossip_node *gnode, json_object *root)
 		return -1;
 
 	json_object *data = json_object_object_get(root, "data");
+	json_object_put(gnode->data);
+	gnode->data = NULL;
 	json_object_deep_copy(data, &gnode->data, NULL);
 
 	return 0;
