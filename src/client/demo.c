@@ -40,7 +40,7 @@ int main(int argc, char *argv[])
 		gossip_node_set_full(gnode, ipaddr, port);
 
 	assert(gossip_init(&gsp, gnode, port) == 0);
-	if (argc == 3) gossip_add_seed(&gsp, argv[2]);
+	if (argc == 3) gossip_add_seeds(&gsp, argv[2]);
 	while (!exit_flag) gossip_loop_once(&gsp);
 	gossip_close(&gsp);
 

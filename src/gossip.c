@@ -520,11 +520,25 @@ int gossip_close(struct gossip *gsp)
 	return 0;
 }
 
-void gossip_add_seed(struct gossip *gsp, const char *seed)
+void gossip_add_seeds(struct gossip *gsp, const char *seeds)
 {
+	if (strlen(seeds) == 0)
+		return;
+
+	const char *start = seeds;
+	const char *end = strchr(start, ',');
+	if (!end) end = strchr(start, '\0');
+
+	void *tmp = malloc(end - start + 1);
+	memset(tmp, 0, end - start + 1);
+	memcpy(tmp, start, end - start);
+
 	gsp->nr_seeds++;
 	gsp->seeds = realloc(gsp->seeds, gsp->nr_seeds * sizeof(void *));
-	gsp->seeds[gsp->nr_seeds - 1] = strdup(seed);
+	gsp->seeds[gsp->nr_seeds - 1] = tmp;
+
+	if (*end != '\0' && *(end + 1) != '\0')
+		gossip_add_seeds(gsp, end + 1);
 }
 
 int gossip_loop_once(struct gossip *gsp)

@@ -12,7 +12,7 @@ static void *gossip_thread1(void *)
 	gnode->update_time = time(NULL);
 
 	assert(gossip_init(&gsp, gnode, 25688) == 0);
-	gossip_add_seed(&gsp, "127.0.0.1:25689");
+	gossip_add_seeds(&gsp, "127.0.0.1:25689");
 	while (1) gossip_loop_once(&gsp);
 	gossip_close(&gsp);
 	free_gossip_node(gnode);
@@ -30,7 +30,7 @@ static void *gossip_thread2(void *)
 	gnode->update_time = time(NULL);
 
 	assert(gossip_init(&gsp, gnode, 25689) == 0);
-	gossip_add_seed(&gsp, "127.0.0.1:25688");
+	gossip_add_seeds(&gsp, "127.0.0.1:25688");
 	while (1) gossip_loop_once(&gsp);
 	gossip_close(&gsp);
 	free_gossip_node(gnode);
