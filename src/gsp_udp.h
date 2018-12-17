@@ -1,8 +1,13 @@
 #ifndef __GSP_UDP_H
 #define __GSP_UDP_H
 
-#include <sys/types.h>
+#ifdef __WIN32
+#include <winsock2.h>
+typedef int socklen_t;
+#else
 #include <sys/socket.h>
+#include <sys/types.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {

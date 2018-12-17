@@ -4,12 +4,28 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#ifdef __WIN32
+#include <winsock2.h>
+#define setsockopt(A, B, C, D, E) setsockopt(A, B, C, (char *)D, E)
+#else
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#endif
+
+int lib_init;
 
 int gsp_udp_init(struct gsp_udp *udp, struct gsp_udp_info *info)
 {
+	if (!lib_init) {
+#ifdef __WIN32
+		WSADATA wsaData;
+		if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+			exit(EXIT_FAILURE);
+#endif
+		lib_init = 1;
+	}
+
 	memset(udp, 0, sizeof(*udp));
 
 	udp->fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -27,7 +43,11 @@ int gsp_udp_init(struct gsp_udp *udp, struct gsp_udp_info *info)
 		return -1;
 	}
 
+#ifdef __WIN32
+	int tv = 100;
+#else
 	struct timeval tv = { .tv_sec = 0, .tv_usec = 100000 };
+#endif
 	if (setsockopt(udp->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
 		int err = errno;
 		close(udp->fd);

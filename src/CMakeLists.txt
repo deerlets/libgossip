@@ -8,7 +8,8 @@ target_link_libraries(gossip json-c crypto)
 set_target_properties(gossip PROPERTIES VERSION 0.1.0 SOVERSION 0.1)
 
 if (WIN32)
-target_link_libraries(gossip ws2_32)
+target_link_libraries(gossip ws2_32 regex)
+add_definitions(-D_POSIX)
 endif ()
 
 install(TARGETS gossip

@@ -7,8 +7,12 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef __WIN32
+#include <winsock2.h>
+#else
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#endif
 #include "utils.h"
 
 #define NR_HASH 919
@@ -160,7 +164,7 @@ static struct gossip_node *
 get_random_active_gossip_node(struct gossip *gsp)
 {
 	int index = 0;
-	int ran = random() % gsp->nr_active_gnodes;
+	int ran = rand() % gsp->nr_active_gnodes;
 
 	struct gossip_node *pos;
 	list_for_each_entry(pos, &gsp->active_gnodes, active_node) {
@@ -206,7 +210,7 @@ make_packet_sync(struct gossip *gsp, struct gossip_node *target)
 		if (pos == gsp->self || pos == target)
 			continue;
 
-		if (random() % nr_left >=
+		if (rand() % nr_left >=
 		    (GOSSIP_DEFAULT_SYNC_COUNT - sync_count))
 			continue;
 
@@ -451,7 +455,7 @@ static void do_sync_seed(struct gossip *gsp)
 {
 	if (!gsp->seeds) return;
 
-	int ran = random() % gsp->nr_seeds;
+	int ran = rand() % gsp->nr_seeds;
 	const char *seed = gsp->seeds[ran];
 
 	char ipaddr[64];

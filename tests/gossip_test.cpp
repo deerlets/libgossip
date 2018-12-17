@@ -1,7 +1,8 @@
+#include <gtest/gtest.h>
 #include <assert.h>
 #include <pthread.h>
+#include <unistd.h>
 #include "gossip.h"
-#include <gtest/gtest.h>
 
 static int exit_flag;
 

@@ -2,7 +2,6 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <arpa/inet.h>
 #include <unistd.h>
 #include <signal.h>
 
@@ -25,11 +24,11 @@ int main(int argc, char *argv[])
 	signal(SIGQUIT, signal_handler);
 
 	char pubkey[256];
-	snprintf(pubkey, 256, "gnode-%ld", random() % 100);
+	snprintf(pubkey, 256, "gnode-%d", rand() % 100);
 
 	struct gossip gsp = {0};
 	struct gossip_node *gnode = make_gossip_node(pubkey);
-	JSON_ADD_INT(gnode->data, "weight", random() % 1000);
+	JSON_ADD_INT(gnode->data, "weight", rand() % 1000);
 	gnode->version++;
 	gnode->update_time = time(NULL);
 
