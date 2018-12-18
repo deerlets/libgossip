@@ -109,8 +109,9 @@ struct gossip_node *gossip_node_from_json(json_object *root)
 	json_object *data = json_object_object_get(root, "data");
 	json_object_deep_copy(data, &gnode->data, NULL);
 
-	INIT_LIST_HEAD(&gnode->node);
 	INIT_HLIST_NODE(&gnode->hash_node);
+	INIT_LIST_HEAD(&gnode->node);
+	INIT_LIST_HEAD(&gnode->active_node);
 
 	return gnode;
 }
