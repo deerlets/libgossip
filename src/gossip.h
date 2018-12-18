@@ -77,6 +77,7 @@ struct gossip {
 int gossip_init(struct gossip *gsp, struct gossip_node *gnode, int port);
 int gossip_close(struct gossip *gsp);
 void gossip_add_seeds(struct gossip *gsp, const char *seeds);
+void gossip_clear_seeds(struct gossip *gsp);
 int gossip_loop_once(struct gossip *gsp);
 
 #ifdef __cplusplus

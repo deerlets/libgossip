@@ -557,6 +557,22 @@ void gossip_add_seeds(struct gossip *gsp, const char *seeds)
 		gossip_add_seeds(gsp, end + 1);
 }
 
+void gossip_clear_seeds(struct gossip *gsp)
+{
+	if (!gsp->seeds) {
+		assert(gsp->nr_seeds == 0);
+		return;
+	}
+
+	int bak = gsp->nr_seeds;
+	gsp->nr_seeds = 0;
+
+	for (int i = 0; i < bak; i++)
+		free(gsp->seeds[i]);
+	free(gsp->seeds);
+	gsp->seeds = NULL;
+}
+
 int gossip_loop_once(struct gossip *gsp)
 {
 	gsp_udp_read_start(gsp->udp, read_cb);
