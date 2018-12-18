@@ -363,6 +363,10 @@ static json_object *handle_packet_ack1(struct gossip *gsp, json_object *ack1)
 				list_add(&gnode->active_node,
 				         &gsp->active_gnodes);
 				gsp->nr_active_gnodes++;
+			} else if (!gnode->full_node &&
+			           !list_empty(&gnode->active_node)) {
+				list_del(&gnode->active_node);
+				gsp->nr_active_gnodes--;
 			}
 		} else if (version == gnode->version) {
 			if (alive_time >= gnode->alive_time)
@@ -418,6 +422,10 @@ static void handle_packet_ack2(struct gossip *gsp, json_object *ack2)
 				list_add(&gnode->active_node,
 				         &gsp->active_gnodes);
 				gsp->nr_active_gnodes++;
+			} else if (!gnode->full_node &&
+			           !list_empty(&gnode->active_node)) {
+				list_del(&gnode->active_node);
+				gsp->nr_active_gnodes--;
 			}
 		}
 	}
