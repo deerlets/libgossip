@@ -147,6 +147,7 @@ static json_object *gossip_node_min_to_json(const struct gossip_node *gnode)
 static struct gossip_node *
 find_gossip_node(struct gossip *gsp, const char *pubid)
 {
+	// FIXME: rewrite this function with hlist
 	struct gossip_node *pos;
 	list_for_each_entry(pos, &gsp->gnodes, node) {
 		if (strcmp(pos->pubid, pubid) == 0)
@@ -190,6 +191,7 @@ make_packet_sync(struct gossip *gsp, struct gossip_node *target)
 {
 	json_object *root = json_object_new_object();
 	JSON_ADD_INT(root, "phase", GOSSIP_PHASE_SYNC);
+	JSON_ADD_INT(root, "full_node", gsp->self->full_node);
 
 	json_object *gnodes = json_object_new_array();
 	JSON_ADD_OBJECT(root, "gnodes", gnodes);
@@ -206,8 +208,7 @@ make_packet_sync(struct gossip *gsp, struct gossip_node *target)
 		if (pos == gsp->self || pos == target)
 			continue;
 
-		if (rand() % nr_left >=
-		    (GOSSIP_DEFAULT_SYNC_COUNT - sync_count))
+		if (rand() % nr_left >= (GOSSIP_DEFAULT_SYNC_COUNT - sync_count))
 			continue;
 
 		sync_count++;
@@ -220,13 +221,44 @@ make_packet_sync(struct gossip *gsp, struct gossip_node *target)
 	return root;
 }
 
+static void append_packet_sync(struct gossip *gsp, json_object *root)
+{
+	json_object *gnodes = json_object_object_get(root, "gnodes");
+
+	int sync_count = 0;
+	int nr_left = gsp->nr_gnodes - 1;
+
+	struct gossip_node *pos;
+	list_for_each_entry(pos, &gsp->gnodes, node) {
+		if (pos == gsp->self)
+			continue;
+
+		if (rand() % nr_left >=
+		    (GOSSIP_DEFAULT_SYNC_COUNT/2 - sync_count))
+			continue;
+
+		sync_count++;
+		nr_left--;
+		json_object *tmp = json_object_new_object();
+		JSON_ADD_STRING(tmp, "pubid", pos->pubid);
+		JSON_ADD_INT64(tmp, "version", 0);
+		JSON_ADD_INT64(tmp, "update_time", 0);
+		json_object_array_add(gnodes, tmp);
+	}
+
+	assert(nr_left == 0 || sync_count == GOSSIP_DEFAULT_SYNC_COUNT/2);
+}
+
 static json_object *handle_packet_sync(struct gossip *gsp, json_object *sync)
 {
+	// init ack1
 	json_object *ack1 = json_object_new_object();
 	JSON_ADD_INT(ack1, "phase", GOSSIP_PHASE_ACK1);
 	json_object *ack1_gnodes = json_object_new_array();
 	JSON_ADD_OBJECT(ack1, "gnodes", ack1_gnodes);
+	append_packet_sync(gsp, ack1);
 
+	// make ack1_gnodes
 	int has_self = 0;
 	json_object *sync_gnodes = JSON_GET_OBJECT(sync, "gnodes");
 	size_t nr = json_object_array_length(sync_gnodes);
@@ -301,7 +333,13 @@ static json_object *handle_packet_ack1(struct gossip *gsp, json_object *ack1)
 		struct gossip_node *gnode = find_gossip_node(gsp, pubid);
 
 		if (!gnode) {
-			gnode = gossip_node_from_json(item);
+			if (JSON_HAS(item, "pubkey"))
+				gnode = gossip_node_from_json(item);
+			else {
+				gnode = make_gossip_node("unknown");
+				free(gnode->pubid);
+				gnode->pubid = strdup(pubid);
+			}
 
 			unsigned int tag =
 				calc_tag(gnode->pubid, strlen(gnode->pubid));
