@@ -60,7 +60,6 @@ struct gossip_node *make_gossip_node(const char *pubkey)
 void free_gossip_node(struct gossip_node *gnode)
 {
 	free(gnode->public_ipaddr);
-
 	free(gnode->pubkey);
 	free(gnode->pubid);
 
@@ -118,12 +117,16 @@ struct gossip_node *gossip_node_from_json(json_object *root)
 
 int gossip_node_update_from_json(struct gossip_node *gnode, json_object *root)
 {
+	free(gnode->public_ipaddr);
+	free(gnode->pubkey);
+	free(gnode->pubid);
+	json_object_put(gnode->data);
+	gnode->data = NULL;
+
 	if (deserialize(gnode, gossip_node_meta, root))
 		return -1;
 
 	json_object *data = json_object_object_get(root, "data");
-	json_object_put(gnode->data);
-	gnode->data = NULL;
 	json_object_deep_copy(data, &gnode->data, NULL);
 
 	return 0;
