@@ -6,15 +6,15 @@
 #include <string.h>
 #include <time.h>
 #include <regex.h>
-#ifdef __unix
+#ifdef __WIN32
+#include <winsock2.h>
+#else
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <arpa/inet.h>
-#else
-#include <winsock2.h>
 #endif
 #include <openssl/sha.h>
 #include <openssl/rand.h>
@@ -45,7 +45,14 @@ const char *get_ifaddr()
 {
 	char *retval = NULL;
 
-#ifdef __unix
+#ifdef __WIN32
+	WSADATA wsaData;
+	WSAStartup(MAKEWORD(2, 2), &wsaData);
+
+	struct hostent *info = gethostbyname("");
+	retval = inet_ntoa(*(struct in_addr *) (*info->h_addr_list));
+	WSACleanup();
+#else
 	struct ifaddrs *ifaddrs = NULL;
 	if (getifaddrs(&ifaddrs) == -1)
 		return NULL;
@@ -63,13 +70,6 @@ const char *get_ifaddr()
 	}
 
 	freeifaddrs(ifaddrs);
-#else
-	WSADATA wsaData;
-	WSAStartup(MAKEWORD(2, 2), &wsaData);
-
-	struct hostent *info = gethostbyname("");
-	retval = inet_ntoa(*(struct in_addr *) (*info->h_addr_list));
-	WSACleanup();
 #endif
 
 	return retval;
