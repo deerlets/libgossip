@@ -1,0 +1,6 @@
+[submodule "deps/googletest"]
+	path = deps/googletest
+	url = https://github.com/google/googletest
+[submodule "deps/json-c"]
+	path = deps/json-c
+	url = https://github.com/json-c/json-c
